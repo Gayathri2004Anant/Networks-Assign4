@@ -11,8 +11,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#define MYPORT 3490
-#define OTHERPORT 3491
+#define MYPORT 4491
+#define OTHERPORT 4490
 
 int main()
 {
@@ -21,34 +21,32 @@ int main()
         printf("Failed to create socket\n");
         return 1;
     }
+    printf("Socket created\n");
+    fflush(stdout);
 
     if(k_bind(IP, MYPORT, IP, OTHERPORT) < 0){
         printf("Failed to bind\n");
         return 1;
     }
 
-    struct sockaddr_in dest_addr;
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(OTHERPORT);
-    dest_addr.sin_addr.s_addr = inet_addr(IP);
+    // printf("Server running...\n");
 
     struct sockaddr_in peer_addr;
     socklen_t peerlen = sizeof(peer_addr);
 
     char buf[MSIZE];
-    int idx = 0;
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(OTHERPORT);
+    dest_addr.sin_addr.s_addr = inet_addr(IP);
 
     while(1){
-        // sleep(2);
-        usleep(10000);
-        sprintf(buf, "%d : Hello from user2", idx++);
-        int bytes_sent = k_sendto(sockfd, buf, strlen(buf)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
-        if(bytes_sent < 0){
-            printf("Failed to send\n");
-            return 1;
+        usleep(20000);
+        while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0){
+            sleep(2);
         }
-        // printf("Sent %d bytes\n", bytes_sent);
-        printf("%s sent\n", buf);
+        printf("%s received\n", buf);
     }
 
     k_close(sockfd);

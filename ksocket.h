@@ -18,10 +18,13 @@
 #define SOCK_KTP 2025
 #define W 10
 #define MSIZE 512
-#define N 2
+#define N 5
 #define SMKEY 4
 #define SOCKKEY 3
-#define FILEPATH "makefile"
+#define SMPATH "makefile"
+#define SOCKPATH "/"
+#define S1PATH "./ksocket.c"
+#define S2PATH "./ksocket.h"
 #define SEMSMKEY 'A'
 #define SEMSOCKKEY 'B'
 #define S1KEY 'C'

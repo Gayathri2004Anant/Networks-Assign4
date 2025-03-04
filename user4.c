@@ -11,8 +11,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#define MYPORT 3490
-#define OTHERPORT 3491
+#define MYPORT 4490
+#define OTHERPORT 4491
 
 int main()
 {
@@ -41,7 +41,7 @@ int main()
     while(1){
         // sleep(2);
         usleep(10000);
-        sprintf(buf, "%d : Hello from user2", idx++);
+        sprintf(buf, "%d : Hello from user4", idx++);
         int bytes_sent = k_sendto(sockfd, buf, strlen(buf)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
         if(bytes_sent < 0){
             printf("Failed to send\n");

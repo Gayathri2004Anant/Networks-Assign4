@@ -42,8 +42,10 @@ int main()
     dest_addr.sin_addr.s_addr = inet_addr(IP);
 
     while(1){
-        sleep(4);
-        while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0);
+        usleep(20000);
+        while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0){
+            sleep(2);
+        }
         printf("%s received\n", buf);
     }
 

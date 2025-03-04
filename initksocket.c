@@ -41,7 +41,7 @@ void initSock(int i){
     SM[i].sendw.base = 0;
     SM[i].sendw.currsize = 0;
     SM[i].sendw.timer = -1;
-    SM[i].sendw.swsize = 0;
+    SM[i].sendw.swsize = W;
     for(int j = 0; j < W; ++j){
         SM[i].sendw.sw[j] = -1;
     }
@@ -49,7 +49,7 @@ void initSock(int i){
     SM[i].recvw.end = W-1;
     SM[i].recvw.rwsize = W;
     for(int j = 0; j < W; ++j){
-        SM[i].recvw.rw[j] = i+1;
+        SM[i].recvw.rw[j] = j+1;
     }
     SM[i].recvw.timer = -1;
     SM[i].sendw.lastSent = 0;
@@ -59,14 +59,14 @@ void initSock(int i){
 void signal_handler(int signo){
     if(signo == SIGINT){
         printf("Received SIGINT\n");
-        shmdt(SM);
-        shmdt(curr);
         shmctl(shmidSM, IPC_RMID, NULL);
         shmctl(shmidSOCK, IPC_RMID, NULL);
         semctl(semSM, 0, IPC_RMID);
         semctl(semSOCK, 0, IPC_RMID);
         semctl(s1, 0, IPC_RMID);
         semctl(s2, 0, IPC_RMID);
+        shmdt(SM);
+        shmdt(curr);
         exit(0);
     }
 }
@@ -91,6 +91,7 @@ void deconstruct_msg(packet *b, char *message, size_t len){
 void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
     if(b->ack > 0){ //ack message
         //check if this is the ack to any message already sent
+        printf("Socket[%d]>> Processing ack = %d\n", i, b->ack);
         int j;
         for(j = SM[i].sendw.base; j < SM[i].sendw.base + SM[i].sendw.currsize; ++j){
             if(b->ack == SM[i].sendw.sw[j % W]){
@@ -98,6 +99,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             }
         }
         if(j == SM[i].sendw.base + SM[i].sendw.currsize){ // not in window, ignore
+            printf("Socket[%d]>> Ignoring ack %d\n", i, b->ack);
             return;
         }
         SM[i].sendw.swsize = b->rwsize;
@@ -116,6 +118,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
     }
     else{ //data message
         if(b->seq == -1) return;
+        printf("Socket[%d]>> Processing message seq = %d, rw[%d] = %d\n", i, b->seq, SM[i].recvw.st, SM[i].recvw.rw[SM[i].recvw.st]);
         if(b->seq == SM[i].recvw.rw[SM[i].recvw.st]){ //inorder message
 
             int acknum = b->seq;
@@ -125,7 +128,8 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].free = 0;
             SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].seq = b->seq;
             SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].ack = b->ack;
-            strcpy(SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].data, b->data);
+            strcpy(SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].data, b->data);
+            printf("Socket[%d]>> Inorder message: buffer[%d] = seq %d\n", i, (SM[i].recv.st + SM[i].recv.size)%BUFSIZE, b->seq);
             SM[i].recv.size++;
 
             int fst = (SM[i].recv.size + SM[i].recv.st) % W;
@@ -136,6 +140,8 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
                 j = (j + 1) % W;
                 if(j == fst) break;
             }
+
+            // printf("Before: SM[i].recvw.st = %d ", SM[i].recvw.st);
 
             SM[i].recvw.rw[SM[i].recvw.st] = -1;
             SM[i].recvw.rwsize--;
@@ -149,6 +155,8 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
                 if(SM[i].recvw.st == fst) break;
             }
 
+            // printf("After: SM[i].recvw.st = %d\n", SM[i].recvw.st);
+
             packet ack;
             ack.seq = -1;
             ack.ack = acknum;
@@ -157,7 +165,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             char message[MSIZE];
             construct_msg(&ack, message, MSIZE);
             sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) peer_addr, sizeof(*peer_addr));
-            printf(">> Sent ack = %d, data = %s, window = %d\n", ack.ack, ack.data, ack.rwsize);
+            printf("Socket[%d]>> Sent ack = %d, data = %s, window = %d\n", i, ack.ack, ack.data, ack.rwsize);
             fflush(stdout);
         }
         else{ //out of order message
@@ -175,6 +183,8 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].seq = b->seq;
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].ack = b->ack;
             strcpy(SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].data, b->data);
+
+            printf("Socket[%d]>> Out of order message: buffer[%d] = seq: %d", i, (SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE, b->seq);
 
             SM[i].recvw.rw[SM[i].recvw.st + idx] = -1;
             SM[i].recvw.rwsize--;
@@ -224,12 +234,12 @@ void *R(){
                         packet b;
                         deconstruct_msg(&b, message, MSIZE);
                         if(dropMessage()){
-                            printf(">> Dropped packet seq = %d, ack = %d, data = %s, window = %d\n", b.seq, b.ack, b.data, b.rwsize);
+                            printf("Socket[%d]>> Dropped packet seq = %d, ack = %d, data = %s, window = %d\n", i, b.seq, b.ack, b.data, b.rwsize);
                             fflush(stdout);
                             rel(semSM, i);
                             continue;
                         }
-                        printf(">> Received seq = %d, ack = %d, data = %s, window = %d\n", b.seq, b.ack, b.data, b.rwsize);
+                        printf("Socket[%d]>> Received seq = %d, ack = %d, data = %s, window = %d\n", i, b.seq, b.ack, b.data, b.rwsize);
                         fflush(stdout);
                         handlePacket(&b, i, &peer_addr);
                     }
@@ -253,7 +263,7 @@ void *S(){
                     if(SM[i].sendw.currsize == 0) continue;
                     for(int j = 0; j < SM[i].sendw.currsize; ++j){
                         packet b = SM[i].send_buffer[(SM[i].sendw.base + j) % BUFSIZE];
-                        printf(">> Timeout, retransmitting packet seq = %d, data = %s, window = %d\n", b.seq, b.data, b.rwsize);
+                        printf("Socket[%d]>> Timeout, retransmitting packet seq = %d, data = %s, window = %d\n", i, b.seq, b.data, b.rwsize);
                         fflush(stdout);
                         char message[MSIZE];
                         construct_msg(&b, message, MSIZE);
@@ -264,14 +274,16 @@ void *S(){
                 if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0){
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];
                     b.seq = nextseq(SM[i].sendw.lastSent);
+                    SM[i].sendw.lastSent = b.seq;
                     SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE].seq = b.seq;
                     char message[MSIZE];
-                    printf(">> Sending new packet seq = %d, data = %s, window = %d\n", b.seq, b.data, b.rwsize);
+                    printf("Socket[%d]>> Sending new packet seq = %d, data = %s, window = %d\n", i, b.seq, b.data, b.rwsize);
                     fflush(stdout);
                     construct_msg(&b, message, MSIZE);
                     sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
                     SM[i].sendw.sw[(SM[i].sendw.base + SM[i].sendw.currsize) % W] = b.seq;
                     SM[i].sendw.currsize++;
+                    SM[i].sendw.swsize--;
                     if(SM[i].sendw.currsize == 1) SM[i].sendw.timer = time(NULL);
                 }
             }
@@ -285,35 +297,36 @@ int main(){
     printf(">> Initiating ksocket server\n");
     signal(SIGINT, signal_handler);
 
-    int key = ftok(FILEPATH, SMKEY);
+    int key = ftok("makefile", SMKEY);
+    printf(">> SM key: %d\n", key);
     shmidSM = shmget(key, N*sizeof(ksocket), 0666 | IPC_CREAT);
     if(shmidSM == -1){
         perror(">> Failed to create shmidSM shared memory");
         exit(1);
     }
-    key = ftok(FILEPATH, SOCKKEY);
+    key = ftok("makefile", SOCKKEY);
     shmidSOCK = shmget(key, sizeof(currsock), 0666 | IPC_CREAT);
     if(shmidSOCK == -1){
         perror(">> Failed to create shmidSOCK shared memory");
         exit(1);
     }
 
-    semSM = semget(ftok("makefile", SEMSMKEY), N, 0666 | IPC_CREAT);
+    semSM = semget(ftok(SMPATH, SEMSMKEY), N, 0666 | IPC_CREAT);
     if(semSM == -1){
         perror(">> Failed to create semSM semaphore");
         exit(1);
     }
-    semSOCK = semget(ftok("makefile", SEMSOCKKEY), 1, 0666 | IPC_CREAT);
+    semSOCK = semget(ftok(SOCKPATH, SEMSOCKKEY), 1, 0666 | IPC_CREAT);
     if(semSOCK == -1){
         perror(">> Failed to create semSOCK semaphore");
         exit(1);
     }
-    s1 = semget(ftok("makefile", S1KEY), 1, 0666 | IPC_CREAT);
+    s1 = semget(ftok(S1PATH, S1KEY), 1, 0666 | IPC_CREAT);
     if(s1 == -1){
         perror(">> Failed to create s1 semaphore");
         exit(1);
     }
-    s2 = semget(ftok("makefile", S2KEY), 1, 0666 | IPC_CREAT);
+    s2 = semget(ftok(S2PATH, S2KEY), 1, 0666 | IPC_CREAT);
     if(s2 == -1){
         perror(">> Failed to create s2 semaphore");
         exit(1);
@@ -389,7 +402,7 @@ int main(){
             else{
                 SM[curr->idx].socket = curr->socket;
                 SM[curr->idx].free = 0;
-                printf("Socket %d created\n", curr->socket);
+                printf(">> Socket %d created\n", curr->socket);
             }
         }
         if(curr->idx >= 0 && curr->socket >= 0 && curr->addressvalid){

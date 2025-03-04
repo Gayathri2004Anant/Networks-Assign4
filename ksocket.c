@@ -5,29 +5,48 @@
 
 #include "ksocket.h"
 
-int shmidSM, shmidSOCK, semSM, semSOCK, s1, s2;
-currsock* curr;
-ksocket *SM;
+int shmidSMk, shmidSOCKk, semSMk, semSOCKk, s1k, s2k;
+currsock* currk;
+ksocket *SMk;
 
 void getshm(){
-    shmidSM = shmget(ftok(FILEPATH, SMKEY), sizeof(ksocket) * N, 0666);
-    shmidSOCK = shmget(ftok(FILEPATH, SOCKKEY), sizeof(currsock), 0666);
-    semSM = semget(ftok("makefile", SEMSMKEY), 1, 0666);
-    semSOCK = semget(ftok("makefile", SEMSOCKKEY), 1, 0666);
-    s1 = semget(ftok("makefile", S1KEY), 1, 0666);
-    s2 = semget(ftok("makefile", S2KEY), 1, 0666);
+    if(SMk == NULL) {
+        shmidSMk = shmget(ftok("makefile", SMKEY), sizeof(ksocket) * N, 0666);
+        if(shmidSMk < 0) {
+            perror("shmget failed for SMk");
+            exit(1);
+        }
 
-    SM = (ksocket *) shmat(shmidSM, NULL, 0);
-    if(SM == (void *) -1){
-        perror("Failed to attach shared memory");
-        exit(1);
+        SMk = (ksocket *) shmat(shmidSMk, NULL, 0);
+        if(SMk == (void *) -1){
+            perror("Failed to attach shared memory for sockets");
+            exit(1);
+        }
     }
-    curr = (currsock *) shmat(shmidSOCK, NULL, 0);
-    if(curr == (void *) -1){
-        perror("Failed to attach shared memory");
-        exit(1);
+
+    if(currk == NULL) {
+        shmidSOCKk = shmget(ftok("makefile", SOCKKEY), sizeof(currsock), 0666);
+        if(shmidSOCKk < 0) {
+            perror("shmget failed for currsock");
+            exit(1);
+        }
+
+        currk = (currsock *) shmat(shmidSOCKk, NULL, 0);
+        if(currk == (void *) -1){
+            perror("Failed to attach shared memory for currsock");
+            exit(1);
+        }
     }
-    return;
+
+    // Initialize semaphores only once
+    static int semaphores_initialized = 0;
+    if (!semaphores_initialized) {
+        semSMk = semget(ftok(SMPATH, SEMSMKEY), N, 0666);
+        semSOCKk = semget(ftok(SOCKPATH, SEMSOCKKEY), 1, 0666);
+        s1k = semget(ftok(S1PATH, S1KEY), 1, 0666);
+        s2k = semget(ftok(S2PATH, S2KEY), 1, 0666);
+        semaphores_initialized = 1;
+    }
 }
 
 void lock(int semid, int semnum){
@@ -51,28 +70,28 @@ void rel(int semid, int semnum){
 int k_socket(int domain, int type, int protocol){
     getshm();
     for(int i = 0; i < N; ++i){
-        lock(semSM, i);
-        if(SM[i].free){
-            SM[i].free = 0;
-            SM[i].pid = getpid();
-            lock(semSOCK, 0);
-            curr->socket = -1;
-            curr->addressvalid = 0;
-            curr->idx = i;
-            rel(semSOCK, 0);
-            rel(s1, 0);
-            lock(s2, 0);
-            rel(semSM, i);
+        lock(semSMk, i);
+        if(SMk[i].free){
+            SMk[i].free = 0;
+            SMk[i].pid = getpid();
+            lock(semSOCKk, 0);
+            currk->socket = -1;
+            currk->addressvalid = 0;
+            currk->idx = i;
+            rel(semSOCKk, 0);
+            rel(s1k, 0);
+            lock(s2k, 0);
+            rel(semSMk, i);
             return i;
         }
-        rel(semSM, i);
+        rel(semSMk, i);
     }
 
-    lock(semSOCK, 0);
-    curr->socket = -1;
-    curr->addressvalid = 0;
-    curr->idx = -1;
-    rel(semSOCK, 0);
+    lock(semSOCKk, 0);
+    currk->socket = -1;
+    currk->addressvalid = 0;
+    currk->idx = -1;
+    rel(semSOCKk, 0);
 
     errno = ENOSPACE;
 
@@ -84,14 +103,14 @@ int k_bind(char * src_ip, int src_port, char * dst_ip, int dst_port){
     int sockfd = -1;
     int idx = 0;
     for(int i = 0; i < N; ++i){
-        lock(semSM, i);
-        if(!SM[i].free && SM[i].pid == getpid()){
+        lock(semSMk, i);
+        if(!SMk[i].free && SMk[i].pid == getpid()){
             idx = i;
-            sockfd = SM[i].socket;
-            rel(semSM, i);
+            sockfd = SMk[i].socket;
+            rel(semSMk, i);
             break;
         }
-        rel(semSM, i);
+        rel(semSMk, i);
     }
 
     struct sockaddr_in my_addr, peer_addr;
@@ -99,22 +118,22 @@ int k_bind(char * src_ip, int src_port, char * dst_ip, int dst_port){
     my_addr.sin_port = htons(src_port);
     my_addr.sin_addr.s_addr = inet_addr(src_ip);
 
-    lock(semSM, idx);
-    SM[idx].peer_addr.sin_family = AF_INET;
-    SM[idx].peer_addr.sin_port = htons(dst_port);
-    SM[idx].peer_addr.sin_addr.s_addr = inet_addr(dst_ip);
-    SM[idx].peervalid = 1;
-    rel(semSM, idx);
+    lock(semSMk, idx);
+    SMk[idx].peer_addr.sin_family = AF_INET;
+    SMk[idx].peer_addr.sin_port = htons(dst_port);
+    SMk[idx].peer_addr.sin_addr.s_addr = inet_addr(dst_ip);
+    SMk[idx].peervalid = 1;
+    rel(semSMk, idx);
 
-    lock(semSOCK, 0);
-    curr->socket = sockfd;
-    curr->my_addr = my_addr;
-    curr->addressvalid = 1;
-    curr->idx = idx;
-    rel(semSOCK, 0);
+    lock(semSOCKk, 0);
+    currk->socket = sockfd;
+    currk->my_addr = my_addr;
+    currk->addressvalid = 1;
+    currk->idx = idx;
+    rel(semSOCKk, 0);
 
-    rel(s1, 0);
-    lock(s2, 0);
+    rel(s1k, 0);
+    lock(s2k, 0);
 
     return 1;
 }
@@ -126,23 +145,30 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
         errno = EBADF;
         return -1;
     }
-    lock(semSM, idx);
-    if(!SM[idx].peervalid || ntohs(SM[idx].peer_addr.sin_port != ((struct sockaddr_in *) dest_addr)->sin_port) || SM[idx].peer_addr.sin_addr.s_addr != ((struct sockaddr_in *) dest_addr)->sin_addr.s_addr){
+    lock(semSMk, idx);
+    if(!SMk[idx].peervalid || ntohs(SMk[idx].peer_addr.sin_port != ((struct sockaddr_in *) dest_addr)->sin_port) || SMk[idx].peer_addr.sin_addr.s_addr != ((struct sockaddr_in *) dest_addr)->sin_addr.s_addr){
         errno = ENOTBOUND;
-        rel(semSM, idx);
+        rel(semSMk, idx);
         return -1;
     }
-    if(SM[idx].send.size < BUFSIZE){
-        int i = (SM[idx].send.st + SM[idx].send.size)%BUFSIZE;
-        SM[idx].send_buffer[i].free = 0;
-        memcpy(SM[idx].send_buffer[i].data, buf, len);
-        SM[idx].send_buffer[i].seq = -1;
-        SM[idx].send_buffer[i].ack = -1;
-        SM[idx].send.size++;
-        rel(semSM, idx);
-        return len;
+    while(SMk[idx].send.size >= BUFSIZE){
+        rel(semSMk, idx);
+        sleep(2);
+        lock(semSMk, idx);
     }
-    rel(semSM, idx);
+    if(SMk[idx].send.size < BUFSIZE){
+        int i = (SMk[idx].send.st + SMk[idx].send.size)%BUFSIZE;
+        SMk[idx].send_buffer[i].free = 0;
+        memcpy(SMk[idx].send_buffer[i].data, buf, len);
+        SMk[idx].send_buffer[i].data[len] = '\0';
+        printf("Sendbuf[%d] = %s\n", i, SMk[idx].send_buffer[i].data);
+        SMk[idx].send_buffer[i].seq = -1;
+        SMk[idx].send_buffer[i].ack = -1;
+        SMk[idx].send.size++;
+        rel(semSMk, idx);
+        return strlen(buf);
+    }
+    rel(semSMk, idx);
     errno = ENOSPACE;
     return -1;
 }
@@ -150,25 +176,25 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
 int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen){
     getshm();
     int idx = sockfd;
-    lock(semSM, idx);
-    *addrlen = sizeof(SM[idx].peer_addr); 
-    memcpy(src_addr, &SM[idx].peer_addr, sizeof(SM[idx].peer_addr));
+    lock(semSMk, idx);
+    *addrlen = sizeof(SMk[idx].peer_addr); 
+    memcpy(src_addr, &SMk[idx].peer_addr, sizeof(SMk[idx].peer_addr));
 
-    if(SM[idx].recv.size > 0){
-        int i = SM[idx].recv.st;
-        memcpy(buf, SM[idx].recv_buffer[i].data, len);
-        SM[idx].recv_buffer[i].free = 1;
-        SM[idx].recv.st = (SM[idx].recv.st + 1) % BUFSIZE;
-        SM[idx].recv.size--;
+    if(SMk[idx].recv.size > 0){
+        int i = SMk[idx].recv.st;
+        memcpy(buf, SMk[idx].recv_buffer[i].data, len);
+        SMk[idx].recv_buffer[i].free = 1;
+        SMk[idx].recv.st = (SMk[idx].recv.st + 1) % BUFSIZE;
+        SMk[idx].recv.size--;
 
-        SM[idx].recvw.rw[(SM[idx].recvw.end + 1) % W] = nextseq(SM[idx].recvw.rw[SM[idx].recvw.end]);
-        SM[idx].recvw.rwsize++;
-        SM[idx].recvw.end = (SM[idx].recvw.end + 1) % W;
+        SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W] = nextseq(SMk[idx].recvw.rw[SMk[idx].recvw.end]);
+        SMk[idx].recvw.rwsize++;
+        SMk[idx].recvw.end = (SMk[idx].recvw.end + 1) % W;
 
-        rel(semSM, idx);
+        rel(semSMk, idx);
         return len;
     }
-    rel(semSM, idx);  
+    rel(semSMk, idx);  
     errno = ENOMESSAGE;
     return -1;
 }
@@ -176,12 +202,12 @@ int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *sr
 int k_close(int sockfd){
     getshm();
     int idx = sockfd;
-    lock(semSM, idx);
-    SM[idx].free = 1;
-    SM[idx].socket = -1;
-    SM[idx].pid = -1;
-    SM[idx].peervalid = 0;
-    rel(semSM, idx);
+    lock(semSMk, idx);
+    SMk[idx].free = 1;
+    SMk[idx].socket = -1;
+    SMk[idx].pid = -1;
+    SMk[idx].peervalid = 0;
+    rel(semSMk, idx);
     return -1;
 }
 
