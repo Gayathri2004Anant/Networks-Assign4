@@ -1,0 +1,22 @@
+swnd:   - the sender window
+    int base - The index of the first message that has been sent but not yet ACKed in the sw array
+    int currsize - The numeber of messages sent but not ACKed currently
+    int swsize - The maximum number of messeges that can be in the sent but not ACKed state
+    int sw[W] - A circular array that contains
+        seq_no of the message sent but not ACKed in the window [base, base+currsize)
+        -1 otherwise
+    time_t timer - tracks timeout for the oldest packet in sw
+    int lastSent
+
+
+rwnd:   -the receiver window
+    int st 
+    int end
+    int rwsize
+    int rw[W] 
+    int lastRecv
+
+    Description:
+        [st, end] (inclusive) track the window of messages that can arrive and be buffered. 
+        rw[i] contains |    seq no of the expected packet to be buffered at that index
+                       |    -1 if i not in valid range of free space in buffer
