@@ -18,6 +18,7 @@
 #define SOCK_KTP 2025
 #define W 10
 #define MSIZE 512
+#define PAYLOAD 480
 #define N 5
 #define SMKEY 4
 #define SOCKKEY 3
@@ -31,6 +32,7 @@
 #define S2KEY 'D'
 #define BUFSIZE 10
 #define T 5
+#define TCLOSE 10
 #define MAXSEQ 255
 #define p 0.05
 

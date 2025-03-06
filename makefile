@@ -4,7 +4,7 @@ lib:
 
 server:
 	gcc initksocket.c -L. -lksocket -o server
-	./server
+	./server > logs.txt
 
 user1:
 	gcc -L. user1.c -lksocket -o user1
@@ -20,14 +20,10 @@ user3:
 
 user4:
 	gcc -L. user4.c -lksocket -o user4
-	./user2
-
-funrun:
-	gcc -L. fun.c -lksocket -o fun
-	./fun
+	./user4
 
 clean:
-	rm -f *.o *.a server user1 user2 socket
+	rm -f *.o *.a server user1 user2 socket user3 user4 output.txt logs.txt
 
 all:
 	make clean

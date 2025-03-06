@@ -29,8 +29,6 @@ int main()
         return 1;
     }
 
-    // printf("Server running...\n");
-
     struct sockaddr_in peer_addr;
     socklen_t peerlen = sizeof(peer_addr);
 
@@ -41,13 +39,38 @@ int main()
     dest_addr.sin_port = htons(OTHERPORT);
     dest_addr.sin_addr.s_addr = inet_addr(IP);
 
-    while(1){
-        usleep(20000);
-        while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0){
-            sleep(2);
-        }
-        printf("%s received\n", buf);
+    FILE * fp = fopen("output.txt", "w");
+    if(fp == NULL){
+        printf("Failed to open file\n");
+        return 1;
     }
+
+    int idx = 0;
+
+    while(1){
+        int n = k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen);
+        if(n <= 0){
+            printf("no message yet.. retrying to receive..\n");
+            sleep(2);
+            continue;
+        }
+        buf[n] = '\0';
+        if(buf[0] == '$'){
+            // send EOF signalling I'm done
+            sprintf(buf, "$");
+            while(k_sendto(sockfd, buf, strlen(buf)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr)) < 0){
+                printf("retrying to send exit character...\n");
+                sleep(1);
+            }
+            sleep(TCLOSE);
+            printf("Received EOF, exitting...\n");
+            break;
+        }
+        printf("Received token %d\n", ++idx);
+        fprintf(fp, "%s", buf);
+    }
+
+    fclose(fp);
 
     k_close(sockfd);
     

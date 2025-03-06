@@ -161,9 +161,10 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
         SMk[idx].send_buffer[i].free = 0;
         memcpy(SMk[idx].send_buffer[i].data, buf, len);
         SMk[idx].send_buffer[i].data[len] = '\0';
-        printf("Sendbuf[%d] = %s\n", i, SMk[idx].send_buffer[i].data);
+        // printf("Sendbuf[%d] = \n", i, SMk[idx].send_buffer[i].data);
         SMk[idx].send_buffer[i].seq = -1;
         SMk[idx].send_buffer[i].ack = -1;
+        SMk[idx].send_buffer[i].rwsize = SMk[idx].recvw.rwsize;
         SMk[idx].send.size++;
         rel(semSMk, idx);
         return strlen(buf);
@@ -203,7 +204,6 @@ int k_close(int sockfd){
     getshm();
     int idx = sockfd;
     lock(semSMk, idx);
-    SMk[idx].free = 1;
     SMk[idx].socket = -1;
     SMk[idx].pid = -1;
     SMk[idx].peervalid = 0;
