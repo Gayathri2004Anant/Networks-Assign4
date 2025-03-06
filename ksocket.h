@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <semaphore.h>
+#include <pthread.h>
+#include <sys/select.h>
 
 #define IP "127.0.0.1"
 #define SOCK_KTP 2025

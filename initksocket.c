@@ -150,7 +150,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             fst = SM[i].recv.st;
             while(SM[i].recvw.rw[SM[i].recvw.st] == -1){
                 SM[i].recvw.rw[SM[i].recvw.st] = -1;
-                SM[i].recvw.rwsize--;
+                // SM[i].recvw.rwsize--;
                 SM[i].recvw.st = (SM[i].recvw.st + 1) % W;
                 if(SM[i].recvw.st == fst) break;
             }
@@ -228,12 +228,14 @@ void *R(){
                 FD_ZERO(&rfds);
                 for(int i = 0; i < N; ++i){
                     lock(semSM, i);
+                    // if(i == 0) printf(">> R locked sem[0]\n");
                     if(!SM[i].free && SM[i].socket != -1){
                         FD_SET(SM[i].socket, &rfds);
                         if(SM[i].socket > maxfd){
                             maxfd = SM[i].socket;
                         }
                     }
+                    // if(i == 0) printf(">> R releasing sem[0]\n");
                     rel(semSM, i);
                 }
             }
@@ -242,6 +244,7 @@ void *R(){
                 socklen_t peerlen = sizeof(peer_addr);
                 for(int i = 0; i < N; ++i){
                     lock(semSM, i);
+                    // if(i == 0) printf(">> R locked sem[0]\n");
                     if(FD_ISSET(SM[i].socket, &tempfds)){
                         char message[MSIZE];
                         recvfrom(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen);
@@ -258,6 +261,7 @@ void *R(){
                         handlePacket(&b, i, &peer_addr);
                         printf("Socket[%d]>> Packet successfully handled\n", i);
                     }
+                    // if(i == 0) printf(">> R releasing sem[0]\n");
                     rel(semSM, i);
                 }
             }
@@ -272,10 +276,14 @@ void *S(){
 
         for(int i = 0; i < N; ++i){
             lock(semSM, i);
+            // if(i == 0) printf(">> S locked sem[0]\n");
             if(!SM[i].free){
                 //check if timeout then send base
                 if(SM[i].sendw.timer != -1 && time(NULL) - SM[i].sendw.timer >= T){
-                    if(SM[i].sendw.currsize == 0) continue;
+                    if(SM[i].sendw.currsize == 0) {
+                        rel(semSM, i);
+                        continue;
+                    }
                     for(int j = 0; j < SM[i].sendw.currsize; ++j){
                         packet b = SM[i].send_buffer[(SM[i].sendw.base + j) % BUFSIZE];
                         printf("Socket[%d]>> Timeout, retransmitting packet seq = %d, window = %d\n", i, b.seq, b.rwsize);
@@ -302,6 +310,7 @@ void *S(){
                     if(SM[i].sendw.currsize == 1) SM[i].sendw.timer = time(NULL);
                 }
             }
+            // if(i == 0) printf(">> S releasing sem[0]\n");
             rel(semSM, i);
         }
         
@@ -313,11 +322,13 @@ void *G(){ //garbage collector
         sleep(2);
         for(int i = 0; i < N; ++i){
             lock(semSM, i);
+            // if(i == 0) printf(">> G locked sem[0]\n");
             if(SM[i].free == 0 && SM[i].pid == -1){
-                printf("Socket[%d]>> Process ended, resetting socket.\n");
+                printf("Socket[%d]>> Process ended, resetting socket.\n", i);
                 initSock(i);
             }
             rel(semSM, i);
+            // if(i == 0) printf(">> G releasing sem[0]\n");
         }
     }
 }

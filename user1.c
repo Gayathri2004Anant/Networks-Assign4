@@ -63,16 +63,16 @@ int main()
                 sleep(1);
             }
             sleep(TCLOSE);
-            printf("Received EOF, exitting...\n");
+            printf("Received EOF, breaking...\n");
             break;
         }
         printf("Received token %d\n", ++idx);
         fprintf(fp, "%s", buf);
     }
-
+    printf("File received\n");
     fclose(fp);
-
+    printf("closing socket\n");
     k_close(sockfd);
-    
+    printf("Exiting...\n");
     return 0;
 }
