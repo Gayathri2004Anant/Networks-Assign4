@@ -188,6 +188,7 @@ int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *sr
         SMk[idx].recv.size--;
 
         SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W] = nextseq(SMk[idx].recvw.rw[SMk[idx].recvw.end]);
+        printf("This: %d:%d, next: %d:%d\n", SMk[idx].recvw.end, SMk[idx].recvw.rw[SMk[idx].recvw.end], (SMk[idx].recvw.end + 1) % W, SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W]);
         SMk[idx].recvw.rwsize++;
         SMk[idx].recvw.end = (SMk[idx].recvw.end + 1) % W;
 

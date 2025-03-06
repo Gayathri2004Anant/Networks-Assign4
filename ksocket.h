@@ -35,6 +35,7 @@
 #define BUFSIZE 10
 #define T 5
 #define TCLOSE 10
+#define TNOSPACE 10
 #define MAXSEQ 255
 #define p 0.05
 
