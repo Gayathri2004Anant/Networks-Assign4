@@ -35,21 +35,38 @@ int main()
     struct sockaddr_in peer_addr;
     socklen_t peerlen = sizeof(peer_addr);
 
-    char buf[MSIZE];
-    int idx = 0;
-
-    while(1){
-        // sleep(2);
-        usleep(10000);
-        sprintf(buf, "%d : Hello from user2", idx++);
-        int bytes_sent = k_sendto(sockfd, buf, strlen(buf)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
-        if(bytes_sent < 0){
-            printf("Failed to send\n");
-            return 1;
-        }
-        // printf("Sent %d bytes\n", bytes_sent);
-        printf("%s sent\n", buf);
+    FILE * fp = fopen("input.txt", "r");
+    if(fp == NULL){
+        printf("Failed to open file\n");
+        return 1;
     }
+
+    // read by MSIZE no of bytes and send them.
+    char buf[MSIZE];
+    char msg[MSIZE];
+    int n;
+    int idx = 0;
+    while((n = fread(buf, 1, PAYLOAD, fp)) > 0){
+        strncpy(msg, buf, n);
+        msg[n] = '\0';
+        while(k_sendto(sockfd, msg, strlen(msg)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr)) < 0){
+            printf("retrying to send message..\n");
+            sleep(2);
+        }
+        printf("Sent token %d\n", ++idx);
+    }
+    sprintf(buf, "$");
+    while(k_sendto(sockfd, buf, strlen(buf)+1, 0, (struct sockaddr *) &dest_addr, sizeof(dest_addr)) < 0);
+    printf("Sent EOF : %s\n", buf);
+
+    fclose(fp);
+
+    while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0){
+        printf("retrying to recieve final exit confirmation...\n");
+        sleep(1);
+    }
+    printf("Received final exit confirmation: %s\n", buf);
+    printf("Exiting...\n");
 
     k_close(sockfd);
     

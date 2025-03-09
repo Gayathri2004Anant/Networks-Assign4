@@ -13,6 +13,7 @@
 int shmidSM, shmidSOCK, semSM, semSOCK, s1, s2;
 currsock* curr;
 ksocket *SM;
+int numTransmissions;
 
 int min(int a, int b){
     return a < b ? a : b;
@@ -53,6 +54,7 @@ void initSock(int i){
     }
     SM[i].recvw.timer = -1;
     SM[i].sendw.lastSent = 0;
+    SM[i].sendw.lastAcked = 0;
     return;
 }
 
@@ -67,31 +69,40 @@ void signal_handler(int signo){
         semctl(s2, 0, IPC_RMID);
         shmdt(SM);
         shmdt(curr);
+        printf(">> Shared memory and semaphores detached\n");
+        printf(">> Value of numTransmissions: %d\n", numTransmissions);
         exit(0);
     }
 }
 
-void construct_msg(packet *b, char *message, size_t len){
-    sprintf(message, "%d\n%d\n%s\n%d", b->seq, b->ack, b->data, b->rwsize);
+void construct_msg(packet b, char *message){
+    sprintf(message, "%d#%d#%s#%d", b.seq, b.ack, b.data, b.rwsize);
+    fflush(stdout);
     return;
 }
 
-void deconstruct_msg(packet *b, char *message, size_t len){
-    char *token = strtok(message, "\n");
-    b->seq = atoi(token);
-    token = strtok(NULL, "\n");
-    b->ack = atoi(token);
-    token = strtok(NULL, "\n");
-    strcpy(b->data, token);
-    token = strtok(NULL, "\n");
-    b->rwsize = atoi(token);
-    return;
+packet deconstruct_msg(char *message){
+    packet b;
+    char *token = strtok(message, "#");
+    b.seq = atoi(token);
+    token = strtok(NULL, "#");
+    b.ack = atoi(token);
+    token = strtok(NULL, "#");
+    strcpy(b.data, token);
+    token = strtok(NULL, "#");
+    b.rwsize = atoi(token);
+    return b;
 }
 
 void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
+    printf("Socket[%d] >> recwnd: st = %d, end = %d, rwsize = %d\n", i, SM[i].recvw.st, SM[i].recvw.end, SM[i].recvw.rwsize);
     if(b->ack > 0){ //ack message
         //check if this is the ack to any message already sent
-        printf("Socket[%d]>> Processing ack = %d\n", i, b->ack);
+        printf("Socket[%d]>> Processing ack = %d, lastAcked = %d\n", i, b->ack, SM[i].sendw.lastAcked);
+        if(b->ack == SM[i].sendw.lastAcked){
+            SM[i].sendw.swsize = b->rwsize;
+            return;
+        }
         int j;
         for(j = SM[i].sendw.base; j < SM[i].sendw.base + SM[i].sendw.currsize; ++j){
             if(b->ack == SM[i].sendw.sw[j % W]){
@@ -103,6 +114,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             return;
         }
         SM[i].sendw.swsize = b->rwsize;
+        SM[i].sendw.lastAcked = b->ack;
         for(int itr = SM[i].sendw.base; itr != (j+1)%W; itr = (itr+1)%W){
 
             SM[i].send_buffer[(SM[i].send.st + itr) % BUFSIZE].seq = -1;
@@ -125,68 +137,89 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
 
             if(SM[i].recvw.rwsize <= 0 || SM[i].recv.size >= BUFSIZE) return;
 
-            SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].free = 0;
-            SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].seq = b->seq;
-            SM[i].recv_buffer[SM[i].recv.st + SM[i].recv.size].ack = b->ack;
+            SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].free = 0;
+            SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].seq = b->seq;
+            SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].ack = b->ack;
             strcpy(SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].data, b->data);
             printf("Socket[%d]>> Inorder message: buffer[%d] = seq %d\n", i, (SM[i].recv.st + SM[i].recv.size)%BUFSIZE, b->seq);
             SM[i].recv.size++;
+
+            SM[i].recvw.rw[SM[i].recvw.st] = -1;
+            SM[i].recvw.rwsize--;
+            SM[i].recvw.st = (SM[i].recvw.st + 1) % W;
 
             int fst = (SM[i].recv.size + SM[i].recv.st) % W;
             int j = fst;
             while(SM[i].recv_buffer[j].free == 0){
                 SM[i].recv.size++;
+                SM[i].recvw.st = (SM[i].recvw.st + 1) % W;
                 acknum = SM[i].recv_buffer[j].seq;
                 j = (j + 1) % W;
                 if(j == fst) break;
             }
 
-            // printf("Before: SM[i].recvw.st = %d ", SM[i].recvw.st);
-
-            SM[i].recvw.rw[SM[i].recvw.st] = -1;
-            SM[i].recvw.rwsize--;
-            SM[i].recvw.st = (SM[i].recvw.st + 1) % W;
-            
-            fst = SM[i].recv.st;
-            while(SM[i].recvw.rw[SM[i].recvw.st] == -1){
-                SM[i].recvw.rw[SM[i].recvw.st] = -1;
-                SM[i].recvw.rwsize--;
-                SM[i].recvw.st = (SM[i].recvw.st + 1) % W;
-                if(SM[i].recvw.st == fst) break;
-            }
-
-            // printf("After: SM[i].recvw.st = %d\n", SM[i].recvw.st);
-
             packet ack;
             ack.seq = -1;
             ack.ack = acknum;
             ack.rwsize = min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size);
+            if(ack.rwsize <= 0){
+                SM[i].recvw.timer = time(NULL);
+                SM[i].nospace = 1;
+            }
+            else{
+                SM[i].recvw.timer = -1;
+                SM[i].nospace = 0;
+            }
             strcpy(ack.data, "This is an ack message");
             char message[MSIZE];
-            construct_msg(&ack, message, MSIZE);
+            construct_msg(ack, message);
             sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) peer_addr, sizeof(*peer_addr));
-            printf("Socket[%d]>> Sent ack = %d, data = %s, window = %d\n", i, ack.ack, ack.data, ack.rwsize);
+            printf("Socket[%d]>> Sent ack = %d, window = %d\n", i, ack.ack, ack.rwsize);
+            fflush(stdout);
+        }
+        else if(SM[i].recvw.rw[SM[i].recvw.st] == nextseq(b->seq)){ //prev ack was lost
+            packet ack;
+            ack.seq = -1;
+            ack.ack = b->seq;
+            ack.rwsize = min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size);
+            if(ack.rwsize <= 0){
+                SM[i].recvw.timer = time(NULL);
+                SM[i].nospace = 1;
+            }
+            else{
+                SM[i].recvw.timer = -1;
+                SM[i].nospace = 0;
+            }
+            strcpy(ack.data, "This is an ack message");
+            char message[MSIZE];
+            construct_msg(ack, message);
+            sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) peer_addr, sizeof(*peer_addr));
+            printf("Socket[%d]>> Retransmitted ack = %d, window = %d\n", i, ack.ack, ack.rwsize);
             fflush(stdout);
         }
         else{ //out of order message
             int stACK = SM[i].recvw.rw[SM[i].recvw.st];
             int idx = -1;
-            for(int j = SM[i].recvw.st; j != (SM[i].recvw.end + 1)%W; ++j){
+            int j = SM[i].recvw.st;
+            do{
                 idx++;
                 if(b->seq == stACK){
                     break;
                 }
                 stACK = nextseq(stACK);
-            }
-            if(idx == -1) return;
+                j = (j + 1) % W;
+
+            }while(j != (SM[i].recvw.end + 1) % W);
+        
+            if(b->seq != stACK) return;
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].free = 0;
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].seq = b->seq;
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].ack = b->ack;
             strcpy(SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE].data, b->data);
 
-            printf("Socket[%d]>> Out of order message: buffer[%d] = seq: %d", i, (SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE, b->seq);
-
-            SM[i].recvw.rw[SM[i].recvw.st + idx] = -1;
+            printf("Socket[%d]>> Out of order message: buffer[%d] = seq: %d\n", i, (SM[i].recv.st + SM[i].recv.size + idx) % BUFSIZE, b->seq);
+            if(SM[i].recvw.timer != -1) SM[i].recvw.timer = time(NULL);
+            SM[i].recvw.rw[(SM[i].recvw.st + idx)%W] = -1;
             SM[i].recvw.rwsize--;
         }
     }
@@ -214,12 +247,14 @@ void *R(){
                 FD_ZERO(&rfds);
                 for(int i = 0; i < N; ++i){
                     lock(semSM, i);
+                    // if(i == 0) printf(">> R locked sem[0]\n");
                     if(!SM[i].free && SM[i].socket != -1){
                         FD_SET(SM[i].socket, &rfds);
                         if(SM[i].socket > maxfd){
                             maxfd = SM[i].socket;
                         }
                     }
+                    // if(i == 0) printf(">> R releasing sem[0]\n");
                     rel(semSM, i);
                 }
             }
@@ -228,21 +263,24 @@ void *R(){
                 socklen_t peerlen = sizeof(peer_addr);
                 for(int i = 0; i < N; ++i){
                     lock(semSM, i);
+                    // if(i == 0) printf(">> R locked sem[0]\n");
                     if(FD_ISSET(SM[i].socket, &tempfds)){
                         char message[MSIZE];
                         recvfrom(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen);
                         packet b;
-                        deconstruct_msg(&b, message, MSIZE);
+                        b = deconstruct_msg(message);
                         if(dropMessage()){
-                            printf("Socket[%d]>> Dropped packet seq = %d, ack = %d, data = %s, window = %d\n", i, b.seq, b.ack, b.data, b.rwsize);
+                            printf("Socket[%d]>> Dropped packet seq = %d, ack = %d, window = %d\n", i, b.seq, b.ack, b.rwsize);
                             fflush(stdout);
                             rel(semSM, i);
                             continue;
                         }
-                        printf("Socket[%d]>> Received seq = %d, ack = %d, data = %s, window = %d\n", i, b.seq, b.ack, b.data, b.rwsize);
+                        printf("Socket[%d]>> Received seq = %d, ack = %d, window = %d\n", i, b.seq, b.ack, b.rwsize);
                         fflush(stdout);
                         handlePacket(&b, i, &peer_addr);
+                        printf("Socket[%d]>> Packet successfully handled\n", i);
                     }
+                    // if(i == 0) printf(">> R releasing sem[0]\n");
                     rel(semSM, i);
                 }
             }
@@ -257,39 +295,77 @@ void *S(){
 
         for(int i = 0; i < N; ++i){
             lock(semSM, i);
+            // if(i == 0) printf(">> S locked sem[0]\n");
             if(!SM[i].free){
                 //check if timeout then send base
                 if(SM[i].sendw.timer != -1 && time(NULL) - SM[i].sendw.timer >= T){
-                    if(SM[i].sendw.currsize == 0) continue;
+                    if(SM[i].sendw.currsize >= SM[i].send.size) {
+                        rel(semSM, i);
+                        continue;
+                    }
                     for(int j = 0; j < SM[i].sendw.currsize; ++j){
                         packet b = SM[i].send_buffer[(SM[i].sendw.base + j) % BUFSIZE];
-                        printf("Socket[%d]>> Timeout, retransmitting packet seq = %d, data = %s, window = %d\n", i, b.seq, b.data, b.rwsize);
+                        printf("Socket[%d]>> Timeout, retransmitting packet seq = %d, window = %d\n", i, b.seq, b.rwsize);
                         fflush(stdout);
                         char message[MSIZE];
-                        construct_msg(&b, message, MSIZE);
+                        construct_msg(b, message);
                         sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
+                        numTransmissions++;
                     }
                     SM[i].sendw.timer = time(NULL);
                 }
-                if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0){
+                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
+                if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0 && SM[i].sendw.currsize < SM[i].send.size){
+                    // printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];
                     b.seq = nextseq(SM[i].sendw.lastSent);
                     SM[i].sendw.lastSent = b.seq;
                     SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE].seq = b.seq;
                     char message[MSIZE];
-                    printf("Socket[%d]>> Sending new packet seq = %d, data = %s, window = %d\n", i, b.seq, b.data, b.rwsize);
+                    construct_msg(b, message);
+                    printf("Socket[%d]>> Sending new packet seq = %d, window = %d\n", i, b.seq, b.rwsize);
                     fflush(stdout);
-                    construct_msg(&b, message, MSIZE);
                     sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
+                    numTransmissions++;
                     SM[i].sendw.sw[(SM[i].sendw.base + SM[i].sendw.currsize) % W] = b.seq;
                     SM[i].sendw.currsize++;
                     SM[i].sendw.swsize--;
                     if(SM[i].sendw.currsize == 1) SM[i].sendw.timer = time(NULL);
                 }
             }
+            // if(i == 0) printf(">> S releasing sem[0]\n");
+            if(SM[i].recvw.timer != -1 && (time(NULL) - SM[i].recvw.timer) > TNOSPACE && min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size) > 0){
+                packet ack;
+                ack.seq = -1;
+                ack.ack = nextseq((SM[i].recvw.rw[SM[i].recvw.st]-2+MAXSEQ)%MAXSEQ);
+                ack.rwsize = min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size);
+                strcpy(ack.data, "This is an ack message");
+                char message[MSIZE];
+                construct_msg(ack, message);
+                sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
+                printf("Socket[%d]>> Retransmitted ack for updating window size = %d, window = %d\n", i, ack.ack, ack.rwsize);
+                fflush(stdout);
+                SM[i].recvw.timer = time(NULL);
+            }
             rel(semSM, i);
         }
         
+    }
+}
+
+void *G(){ //garbage collector
+    while(1){
+        sleep(2);
+        for(int i = 0; i < N; ++i){
+            lock(semSM, i);
+            // if(i == 0) printf(">> G locked sem[0]\n");
+            if(SM[i].free == 0 && SM[i].pid == -1){
+                printf("Socket[%d]>> Process ended, resetting socket.\n", i);
+                initSock(i);
+            }
+            rel(semSM, i);
+            // if(i == 0) printf(">> G releasing sem[0]\n");
+        }
     }
 }
 
@@ -378,7 +454,9 @@ int main(){
 
     printf(">> Shared memory and semaphores created\n");
 
-    pthread_t r_thread, s_thread;
+    numTransmissions = 0;
+
+    pthread_t r_thread, s_thread, g_thread;
 
     if (pthread_create(&r_thread, NULL, R, NULL) != 0) {
         perror("Failed to create R thread");
@@ -387,6 +465,11 @@ int main(){
     
     if (pthread_create(&s_thread, NULL, S, NULL) != 0) {
         perror("Failed to create S thread");
+        exit(1);
+    }
+
+    if (pthread_create(&g_thread, NULL, G, NULL) != 0) {
+        perror("Failed to create G thread");
         exit(1);
     }
 
@@ -418,6 +501,10 @@ int main(){
 
     pthread_join(r_thread, NULL);
     pthread_join(s_thread, NULL);
+    pthread_join(g_thread, NULL);
+
+    printf(">> Total number of transmissions: %d\n", numTransmissions);
+    printf(">> Exiting ksocket server\n");
 
     return 0;
 

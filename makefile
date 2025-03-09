@@ -20,14 +20,10 @@ user3:
 
 user4:
 	gcc -L. user4.c -lksocket -o user4
-	./user2
-
-funrun:
-	gcc -L. fun.c -lksocket -o fun
-	./fun
+	./user4
 
 clean:
-	rm -f *.o *.a server user1 user2 socket
+	rm -f *.o *.a server user1 user2 socket user3 user4 output.txt logs.txt
 
 all:
 	make clean

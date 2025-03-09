@@ -13,11 +13,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <semaphore.h>
+#include <pthread.h>
+#include <sys/select.h>
 
 #define IP "127.0.0.1"
 #define SOCK_KTP 2025
 #define W 10
 #define MSIZE 512
+#define PAYLOAD 480
 #define N 5
 #define SMKEY 4
 #define SOCKKEY 3
@@ -31,8 +34,10 @@
 #define S2KEY 'D'
 #define BUFSIZE 10
 #define T 5
+#define TCLOSE 10
+#define TNOSPACE 10
 #define MAXSEQ 255
-#define p 0.05
+#define p 0.2
 
 #define ENOSPACE 3001
 #define ENOTBOUND 3002
@@ -55,6 +60,7 @@ typedef struct{
     int sw[W];
     time_t timer;
     int lastSent;
+    int lastAcked;
 } swnd;
 
 typedef struct{
