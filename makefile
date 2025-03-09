@@ -4,7 +4,7 @@ lib:
 
 server:
 	gcc initksocket.c -L. -lksocket -o server
-	./server > logs.txt
+	./server
 
 user1:
 	gcc -L. user1.c -lksocket -o user1

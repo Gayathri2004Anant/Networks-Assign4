@@ -13,6 +13,7 @@
 int shmidSM, shmidSOCK, semSM, semSOCK, s1, s2;
 currsock* curr;
 ksocket *SM;
+int numTransmissions;
 
 int min(int a, int b){
     return a < b ? a : b;
@@ -53,6 +54,7 @@ void initSock(int i){
     }
     SM[i].recvw.timer = -1;
     SM[i].sendw.lastSent = 0;
+    SM[i].sendw.lastAcked = 0;
     return;
 }
 
@@ -67,6 +69,8 @@ void signal_handler(int signo){
         semctl(s2, 0, IPC_RMID);
         shmdt(SM);
         shmdt(curr);
+        printf(">> Shared memory and semaphores detached\n");
+        printf(">> Value of numTransmissions: %d\n", numTransmissions);
         exit(0);
     }
 }
@@ -94,7 +98,11 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
     printf("Socket[%d] >> recwnd: st = %d, end = %d, rwsize = %d\n", i, SM[i].recvw.st, SM[i].recvw.end, SM[i].recvw.rwsize);
     if(b->ack > 0){ //ack message
         //check if this is the ack to any message already sent
-        printf("Socket[%d]>> Processing ack = %d\n", i, b->ack);
+        printf("Socket[%d]>> Processing ack = %d, lastAcked = %d\n", i, b->ack, SM[i].sendw.lastAcked);
+        if(b->ack == SM[i].sendw.lastAcked){
+            SM[i].sendw.swsize = b->rwsize;
+            return;
+        }
         int j;
         for(j = SM[i].sendw.base; j < SM[i].sendw.base + SM[i].sendw.currsize; ++j){
             if(b->ack == SM[i].sendw.sw[j % W]){
@@ -106,6 +114,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
             return;
         }
         SM[i].sendw.swsize = b->rwsize;
+        SM[i].sendw.lastAcked = b->ack;
         for(int itr = SM[i].sendw.base; itr != (j+1)%W; itr = (itr+1)%W){
 
             SM[i].send_buffer[(SM[i].send.st + itr) % BUFSIZE].seq = -1;
@@ -290,7 +299,7 @@ void *S(){
             if(!SM[i].free){
                 //check if timeout then send base
                 if(SM[i].sendw.timer != -1 && time(NULL) - SM[i].sendw.timer >= T){
-                    if(SM[i].sendw.currsize == 0) {
+                    if(SM[i].sendw.currsize >= SM[i].send.size) {
                         rel(semSM, i);
                         continue;
                     }
@@ -301,11 +310,13 @@ void *S(){
                         char message[MSIZE];
                         construct_msg(b, message);
                         sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
+                        numTransmissions++;
                     }
                     SM[i].sendw.timer = time(NULL);
                 }
+                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
                 if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0 && SM[i].sendw.currsize < SM[i].send.size){
-                    printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
+                    // printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];
                     b.seq = nextseq(SM[i].sendw.lastSent);
                     SM[i].sendw.lastSent = b.seq;
@@ -315,6 +326,7 @@ void *S(){
                     printf("Socket[%d]>> Sending new packet seq = %d, window = %d\n", i, b.seq, b.rwsize);
                     fflush(stdout);
                     sendto(SM[i].socket, message, MSIZE, 0, (struct sockaddr *) &(SM[i].peer_addr), sizeof(SM[i].peer_addr));
+                    numTransmissions++;
                     SM[i].sendw.sw[(SM[i].sendw.base + SM[i].sendw.currsize) % W] = b.seq;
                     SM[i].sendw.currsize++;
                     SM[i].sendw.swsize--;
@@ -325,7 +337,7 @@ void *S(){
             if(SM[i].recvw.timer != -1 && (time(NULL) - SM[i].recvw.timer) > TNOSPACE && min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size) > 0){
                 packet ack;
                 ack.seq = -1;
-                ack.ack = SM[i].recvw.rw[SM[i].recvw.st];
+                ack.ack = nextseq((SM[i].recvw.rw[SM[i].recvw.st]-2+MAXSEQ)%MAXSEQ);
                 ack.rwsize = min(SM[i].recvw.rwsize, BUFSIZE - SM[i].recv.size);
                 strcpy(ack.data, "This is an ack message");
                 char message[MSIZE];
@@ -442,6 +454,8 @@ int main(){
 
     printf(">> Shared memory and semaphores created\n");
 
+    numTransmissions = 0;
+
     pthread_t r_thread, s_thread, g_thread;
 
     if (pthread_create(&r_thread, NULL, R, NULL) != 0) {
@@ -488,6 +502,9 @@ int main(){
     pthread_join(r_thread, NULL);
     pthread_join(s_thread, NULL);
     pthread_join(g_thread, NULL);
+
+    printf(">> Total number of transmissions: %d\n", numTransmissions);
+    printf(">> Exiting ksocket server\n");
 
     return 0;
 

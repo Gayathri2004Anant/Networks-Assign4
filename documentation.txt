@@ -1,3 +1,10 @@
+0 -> 229
+0.05 -> 269
+0.1 -> 275
+0.15 -> 293
+0.2 -> 362
+0.25 ->
+
 swnd:   - the sender window
     int base - The index of the first message that has been sent but not yet ACKed in the sw array
     int currsize - The numeber of messages sent but not ACKed currently

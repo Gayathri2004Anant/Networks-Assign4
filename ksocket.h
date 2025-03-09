@@ -37,7 +37,7 @@
 #define TCLOSE 10
 #define TNOSPACE 10
 #define MAXSEQ 255
-#define p 0.05
+#define p 0.2
 
 #define ENOSPACE 3001
 #define ENOTBOUND 3002
@@ -60,6 +60,7 @@ typedef struct{
     int sw[W];
     time_t timer;
     int lastSent;
+    int lastAcked;
 } swnd;
 
 typedef struct{

@@ -156,8 +156,10 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
         sleep(2);
         lock(semSMk, idx);
     }
+    printf("Socket[%d]: send size = %d\n", idx, SMk[idx].send.size);
     if(SMk[idx].send.size < BUFSIZE){
         int i = (SMk[idx].send.st + SMk[idx].send.size)%BUFSIZE;
+        printf("Adding to send buffer at %d\n", i);
         SMk[idx].send_buffer[i].free = 0;
         memcpy(SMk[idx].send_buffer[i].data, buf, len);
         SMk[idx].send_buffer[i].data[len] = '\0';
