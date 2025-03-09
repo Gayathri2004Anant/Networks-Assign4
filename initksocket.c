@@ -95,7 +95,7 @@ packet deconstruct_msg(char *message){
 }
 
 void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
-    printf("Socket[%d] >> recwnd: st = %d, end = %d, rwsize = %d\n", i, SM[i].recvw.st, SM[i].recvw.end, SM[i].recvw.rwsize);
+    // printf("Socket[%d] >> recwnd: st = %d, end = %d, rwsize = %d\n", i, SM[i].recvw.st, SM[i].recvw.end, SM[i].recvw.rwsize);
     if(b->ack > 0){ //ack message
         //check if this is the ack to any message already sent
         printf("Socket[%d]>> Processing ack = %d, lastAcked = %d\n", i, b->ack, SM[i].sendw.lastAcked);
@@ -115,17 +115,38 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
         }
         SM[i].sendw.swsize = b->rwsize;
         SM[i].sendw.lastAcked = b->ack;
-        for(int itr = SM[i].sendw.base; itr != (j+1)%W; itr = (itr+1)%W){
+        int lim = SM[i].sendw.base + SM[i].sendw.currsize;
+        int lim2 = SM[i].send.st + SM[i].sendw.currsize;
+        for(int itr = SM[i].sendw.base; itr < lim; itr++){
+            int idx = itr % W;
+            int temp = SM[i].sendw.sw[idx];
+            // printf("%d ", idx);
+            SM[i].sendw.sw[idx] = -1;
+            SM[i].sendw.currsize--;
+            SM[i].sendw.base = (SM[i].sendw.base + 1) % W;
+            if(temp == b->ack) break;
+        }
+        // printf("\n");
+        for(int itr = SM[i].send.st; itr < lim2; itr++){
+            int idx = itr % BUFSIZE;
+            // printf("%d ", idx);
+            int temp = SM[i].send_buffer[idx].seq;
 
-            SM[i].send_buffer[(SM[i].send.st + itr) % BUFSIZE].seq = -1;
-            SM[i].send_buffer[(SM[i].send.st + itr) % BUFSIZE].free = 1;
+            SM[i].send_buffer[idx].seq = -1;
+            SM[i].send_buffer[idx].free = 1;
             SM[i].send.size--;
             SM[i].send.st = (SM[i].send.st + 1) % BUFSIZE;
 
-            SM[i].sendw.sw[itr] = -1;
-            SM[i].sendw.currsize--;
-            SM[i].sendw.base = (SM[i].sendw.base + 1) % W;
+            if(temp == b->ack) break;
         }
+        // printf("\n");
+
+        // printf("Socket[%d]>> ", i);
+        // for(int j = 0; j < BUFSIZE; ++j) printf("%d ", SM[i].send_buffer[j].seq);
+        // printf("\n");
+        // printf("Socket[%d]>> ", i);
+        // for(int j = 0; j < W; ++j) printf("%d ", SM[i].sendw.sw[j]);
+        // printf("\n");
         SM[i].sendw.timer = time(NULL);
     }
     else{ //data message
@@ -135,7 +156,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
 
             int acknum = b->seq;
 
-            if(SM[i].recvw.rwsize <= 0 || SM[i].recv.size >= BUFSIZE) return;
+            // if(SM[i].recvw.rwsize <= 0 || SM[i].recv.size >= BUFSIZE) return;
 
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].free = 0;
             SM[i].recv_buffer[(SM[i].recv.st + SM[i].recv.size)%BUFSIZE].seq = b->seq;
@@ -314,7 +335,7 @@ void *S(){
                     }
                     SM[i].sendw.timer = time(NULL);
                 }
-                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
+                // printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
                 if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0 && SM[i].sendw.currsize < SM[i].send.size){
                     // printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];

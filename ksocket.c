@@ -156,10 +156,10 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
         sleep(2);
         lock(semSMk, idx);
     }
-    printf("Socket[%d]: send size = %d\n", idx, SMk[idx].send.size);
+    // printf("Socket[%d]: send size = %d\n", idx, SMk[idx].send.size);
     if(SMk[idx].send.size < BUFSIZE){
         int i = (SMk[idx].send.st + SMk[idx].send.size)%BUFSIZE;
-        printf("Adding to send buffer at %d\n", i);
+        // printf("Adding to send buffer at %d\n", i);
         SMk[idx].send_buffer[i].free = 0;
         memcpy(SMk[idx].send_buffer[i].data, buf, len);
         SMk[idx].send_buffer[i].data[len] = '\0';
@@ -190,7 +190,7 @@ int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *sr
         SMk[idx].recv.size--;
 
         SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W] = nextseq(SMk[idx].recvw.rw[SMk[idx].recvw.end]);
-        printf("This: %d:%d, next: %d:%d\n", SMk[idx].recvw.end, SMk[idx].recvw.rw[SMk[idx].recvw.end], (SMk[idx].recvw.end + 1) % W, SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W]);
+        // printf("This: %d:%d, next: %d:%d\n", SMk[idx].recvw.end, SMk[idx].recvw.rw[SMk[idx].recvw.end], (SMk[idx].recvw.end + 1) % W, SMk[idx].recvw.rw[(SMk[idx].recvw.end + 1) % W]);
         SMk[idx].recvw.rwsize++;
         SMk[idx].recvw.end = (SMk[idx].recvw.end + 1) % W;
 
@@ -205,9 +205,9 @@ int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *sr
 int k_close(int sockfd){
     getshm();
     int idx = sockfd;
-    printf("inside k_close: %d\n", idx);
+    // printf("inside k_close: %d\n", idx);
     lock(semSMk, idx);
-    printf("locked: %d\n", idx);
+    // printf("locked: %d\n", idx);
     SMk[idx].socket = -1;
     SMk[idx].pid = -1;
     SMk[idx].peervalid = 0;
