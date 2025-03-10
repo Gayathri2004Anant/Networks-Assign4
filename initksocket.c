@@ -139,14 +139,15 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
 
             if(temp == b->ack) break;
         }
+        #ifdef DEBUG
         // printf("\n");
-
         // printf("Socket[%d]>> ", i);
         // for(int j = 0; j < BUFSIZE; ++j) printf("%d ", SM[i].send_buffer[j].seq);
         // printf("\n");
         // printf("Socket[%d]>> ", i);
         // for(int j = 0; j < W; ++j) printf("%d ", SM[i].sendw.sw[j]);
         // printf("\n");
+        #endif
         SM[i].sendw.timer = time(NULL);
     }
     else{ //data message
@@ -335,7 +336,7 @@ void *S(){
                     }
                     SM[i].sendw.timer = time(NULL);
                 }
-                // printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
+                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
                 if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0 && SM[i].sendw.currsize < SM[i].send.size){
                     // printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];

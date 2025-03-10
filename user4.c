@@ -11,8 +11,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#define MYPORT 3490
-#define OTHERPORT 3491
+#define MYPORT 5490
+#define OTHERPORT 5491
 
 int main()
 {
@@ -35,7 +35,7 @@ int main()
     struct sockaddr_in peer_addr;
     socklen_t peerlen = sizeof(peer_addr);
 
-    FILE * fp = fopen("input3.txt", "r");
+    FILE * fp = fopen("input2.txt", "r");
     if(fp == NULL){
         printf("Failed to open file\n");
         return 1;

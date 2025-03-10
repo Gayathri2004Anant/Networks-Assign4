@@ -1,3 +1,8 @@
+// Assignment 4 Submission
+// Name: Gayathri Anant
+// Roll no. 22CS30026
+// email: gayathrianant05@gmail.com
+
 #include <sys/time.h>
 #include <errno.h>
 #include <stdlib.h>

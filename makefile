@@ -23,7 +23,7 @@ user4:
 	./user4
 
 clean:
-	rm -f *.o *.a server user1 user2 socket user3 user4 output.txt logs.txt
+	rm -f *.o *.a server user1 user2 socket user3 user4 output.txt logs.txt output2.txt
 
 all:
 	make clean
