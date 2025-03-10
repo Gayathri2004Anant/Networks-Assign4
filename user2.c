@@ -35,7 +35,7 @@ int main()
     struct sockaddr_in peer_addr;
     socklen_t peerlen = sizeof(peer_addr);
 
-    FILE * fp = fopen("input3.txt", "r");
+    FILE * fp = fopen("input.txt", "r");
     if(fp == NULL){
         printf("Failed to open file\n");
         return 1;

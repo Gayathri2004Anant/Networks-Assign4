@@ -6,18 +6,20 @@ Assignment 4: Emulating End-to-End Reliable Flow Control over Unreliable Communi
 
 RESULT TABLE
 
+Total number of packets = 228
+
 p               | No. of Transmissions  | Avg No. of Transmissions
 ---------------------------------------------------------------
-0.05            | 229                   | 1.097345
-0.10            | 269                   | 1.274336
-0.15            | 275                   | 1.185841
-0.20            | 293                   | 1.371681
-0.25            | 362                   | 1.787611
-0.30            | 419                   | 1.707965
-0.35            |                    | 2.000000
-0.40            |                    | 2.079646
-0.45            |                    | 2.522124
-0.50            | 830                   | 2.893805
+0.05            | 256                   | 1.123
+0.10            | 269                   | 1.179
+0.15            | 275                   | 1.206
+0.20            | 293                   | 1.285
+0.25            | 362                   | 1.587
+0.30            | 419                   | 1.837
+0.35            | 515                   | 2.258
+0.40            | 611                   | 2.679
+0.45            | 721                   | 3.162
+0.50            | 830                   | 3.640
 
 STRUCTS USED AND THEIR DESCRIPTION:
 
@@ -27,6 +29,15 @@ packet: - struct that stores the messages in the sender and the receiver buffer
     int ack - acknowlwdgement number assigned to the packet
     char data[MSIZE] - stores the message string
     int rwsize - stores the receiver window size that has to be sent to along with the message
+
+rwnd:   - the receiver window
+    int st - first packet that needs to be received
+    int end - end of receiver window
+    int rwsize - current window size
+    int rw[W] - A circular array of sequence number of message where
+                rw[i] = -1 if packet is received / packet is not in receiver window
+                        seq of the packet that is expeceted at that position
+    time_t timer - time since nospace was set last and data stopped arriving
 
 swnd:   - the sender window
     int base - The index of the first message that has been sent but not yet ACKed in the sw array
@@ -39,14 +50,122 @@ swnd:   - the sender window
     int lastSent - sequence number of the packet that was sent last
     int lastAcked - ack number of the last ack packet sent
 
-rwnd:   -the receiver window
-    int st - start of the sender window
-    int end - end 
-    int rwsize
-    int rw[W] 
-    timer_t timer
+bufdetails: -stores the start and size of each of the send and the receive buffers
+    int st
+    int size
 
-    Description:
-        [st, end] (inclusive) track the window of messages that can arrive and be buffered. 
-        rw[i] contains |    seq no of the expected packet to be buffered at that index
-                       |    -1 if i not in valid range of free space in buffer
+ksocket: 
+    int free - specifies if the socket is free
+    pid_t pid - stores the pid of the process that has created the socket
+    int socket - stores the corresponding udp sockfd of the ksocket
+    struct sockaddr_in peer_addr - stores the peer address
+    packet send_buffer[BUFSIZE] - stores the packets in the send buffer
+    packet recv_buffer[BUFSIZE] - stores the packets in the receive buffer
+    bufdetails send - stores the details of the send buffer
+    bufdetails recv - stores the details of the receive buffer
+    int peervalid - specifies if the peer_addr field has valid data (i.e. if it has been filled in yet)
+    int nospace - this flag is set if the receiver window has no space for new packets
+    swnd sendw - sender window
+    rwnd recvw - receiver window
+
+currsock: -stores the data of new socket that has been created using k_socket but the corresponding udp socket is not
+           yet created / socket is not bound yet
+    int socket - sockfd, -1 initially but is set by the initksocket main process
+    struct sockaddr_in my_addr - stores the address that this socket needs to be bound to
+    int idx - the index of this socket
+    int addressvalid - specifies if the address is valid (i.e. is it bound yet)
+
+SEMAPHORES USED:
+
+semSM[i] - mutual exclusion for the Shared memory for the ith socket 
+SemSOCK - mutual exclusion for the currsock variable
+s1, s2 - for ensuring proper execution of creation and binding of sockets
+
+FUNCTIONS, THREADS AND THEIR FUNCTIONING:
+
+ksocket.c:
+
+    int k_socket(int domain, int type, int protocol)
+        -looks for a free entry in SM
+            -if found, initialise variables, initialise currsock,
+                wait for initksocket to create socket (this is made sure of using s1 and s2)
+                and return
+            -else set ENOSPACE and return
+
+    int k_bind(char * src_ip, int src_port, char * dst_ip, int dst_port)
+        -finds current socket
+            initailises currsock, and waits for initksocket to bind
+            returns
+
+    int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
+        -if the current socket's peer differs from the given address (socket not bound properly) then give an error
+            -otherwise write to send_buffer of SM entry
+
+    int k_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)
+        -if recv_buffer has data in it, read and retrieve the message
+            advance the receive window by rw[read_seq_no] = -1, and increase rwsize, and add a new receivable seq no at the end
+            -else return with an error
+
+    int k_close(int sockfd)
+        -declare socket as free and perform 
+
+    void getshm()
+        -get all shared memory resources
+
+    int dropMessage()
+        -returns 1 with probability p
+
+    void lock(int sem, int semnum)
+        -locks shared_memory[semnum]
+
+    void rel(int sem, int semnum)
+        -releases shared_memory[semnum]
+
+    int nextseq(int last)
+        -returns the next sequence number given last
+
+initksocket.c:
+
+    void construct_msg(packet *b, char *message, size_t len)
+        -convert packet structure to a string, adding fields seq, ack, data, rwsize separated by newlines
+
+    void deconstruct_msg(packet *b, char *message, size_t len)
+        -retrive the packet structure from string message
+
+    void initSock(int i)
+        -initialises socket variables
+    
+    void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr)
+        -function to handle a received packet
+        -if ack received:
+            if ack = lastAcked, update window size (packet is for unsetting nospace, (to resolve deadlock)) and ignore
+            if ack in sender window, advance sender buffer and sender window, otherwise ignore ack
+            if ack not in window, ignore
+        
+        - if data received:
+            -if inorder packet:
+                -advance receiver buffer
+                -send cumulative ack (advance receiver buffer till the first empty spot)
+                -if receiver size = 0, set nospace
+
+            -if out of order packet
+                -if inside window, add it to recv_buffer at right position and set value at rw to -1 (indicating received)
+                -otherwise ignore packet
+
+    R thread:
+        - monitor all sockets with the help of select with a timeout T
+            -if timeout, check if there is any newly created socket to be added, and add it
+            -receive message with probability 1-p using dropMessage() and call handlePacket()
+
+    S : the sender thread
+        -wake up every (T/2) and do the following:
+            -if there is a timeout for any packet retransmit all packets in the sending window
+            -if there is a packet to be sent in the send_buffer and currsize < swsize,
+                send it by updating seq no of the packet and advance the sender window by adding the seq of the sent
+                packet in the end, and update the currsize
+            -if recvw.timer times out (i.e. timeout after nospace set and no data received yet)
+                retransmit the last ack with an updated window size so that the sender can send new packets
+
+
+    
+
