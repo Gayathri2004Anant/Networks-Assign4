@@ -41,7 +41,7 @@
 #define T 5
 #define TCLOSE 10
 #define TNOSPACE 10
-#define MAXSEQ 255
+#define MAXSEQ 256
 #define p 0.05
 
 #define ENOSPACE 3001

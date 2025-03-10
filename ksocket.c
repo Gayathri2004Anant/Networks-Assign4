@@ -167,6 +167,7 @@ int k_sendto(int sockfd, const void *buf, size_t len, int flags, const struct so
         SMk[idx].send_buffer[i].ack = -1;
         SMk[idx].send_buffer[i].rwsize = SMk[idx].recvw.rwsize;
         SMk[idx].send.size++;
+        printf("Socket[%d]: Send size: %d\n", idx, SMk[idx].send.size);
         rel(semSMk, idx);
         return len;
     }

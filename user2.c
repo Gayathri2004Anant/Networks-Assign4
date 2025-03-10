@@ -61,8 +61,13 @@ int main()
 
     fclose(fp);
 
+    int t = time(NULL);
     while(k_recvfrom(sockfd, buf, MSIZE, 0, (struct sockaddr *) &peer_addr, &peerlen) < 0){
         printf("retrying to recieve final exit confirmation...\n");
+        if(time(NULL) - t > 30){
+            printf("Exiting...\n");
+            return 0;
+        }
         sleep(1);
     }
     printf("Received final exit confirmation: %s\n", buf);

@@ -116,7 +116,8 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
         SM[i].sendw.swsize = b->rwsize;
         SM[i].sendw.lastAcked = b->ack;
         int lim = SM[i].sendw.base + SM[i].sendw.currsize;
-        int lim2 = SM[i].send.st + SM[i].sendw.currsize;
+        int lim2 = SM[i].send.st + SM[i].send.size;
+        printf("Socket[%d] >> initial currsize, size = %d, %d\n", i, SM[i].sendw.currsize, SM[i].send.size);
         for(int itr = SM[i].sendw.base; itr < lim; itr++){
             int idx = itr % W;
             int temp = SM[i].sendw.sw[idx];
@@ -139,6 +140,7 @@ void handlePacket(packet *b, int i, struct sockaddr_in *peer_addr){
 
             if(temp == b->ack) break;
         }
+        printf("Socket[%d] >> final currsize, size = %d, %d\n", i, SM[i].sendw.currsize, SM[i].send.size);
         #ifdef DEBUG
         // printf("\n");
         // printf("Socket[%d]>> ", i);
@@ -320,6 +322,7 @@ void *S(){
             // if(i == 0) printf(">> S locked sem[0]\n");
             if(!SM[i].free){
                 //check if timeout then send base
+                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
                 if(SM[i].sendw.timer != -1 && time(NULL) - SM[i].sendw.timer >= T){
                     if(SM[i].sendw.currsize >= SM[i].send.size) {
                         rel(semSM, i);
@@ -336,7 +339,6 @@ void *S(){
                     }
                     SM[i].sendw.timer = time(NULL);
                 }
-                printf("Socket[%d]>> Currsize: %d Window size: %d Send size: %d\n", i, SM[i].sendw.currsize, SM[i].sendw.swsize, SM[i].send.size);
                 if(SM[i].sendw.currsize < SM[i].sendw.swsize && SM[i].send.size > 0 && SM[i].sendw.currsize < SM[i].send.size){
                     // printf("SM[i].send.size: %d, SM[i].sendw.currsize: %d\n", SM[i].send.size, SM[i].sendw.currsize);
                     packet b = SM[i].send_buffer[(SM[i].send.st + SM[i].sendw.currsize) % BUFSIZE];
